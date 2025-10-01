@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from copy import deepcopy
 
 def pretty_two_matrices(A, I):
@@ -18,10 +18,6 @@ def pretty_two_matrices(A, I):
         lines.append(f"{lA}     {lI}")
     return "\n".join(lines)
 
-# ---------------------------
-# 행렬식 계산 
-# ---------------------------
-
 def pretty_matrix(M):
     n = len(M)
     lines = []
@@ -34,6 +30,7 @@ def pretty_matrix(M):
             line = "⎢ " + "   ".join(f"{x:6.2f}" for x in M[i]) + " ⎥"
         lines.append(line)
     return "\n".join(lines)
+
 
 def determinant_with_steps(matrix, depth=0):
     n = len(matrix)
@@ -66,52 +63,41 @@ def determinant_with_steps(matrix, depth=0):
     log += f"{indent}=> det = {det_val:.2f}\n"
     return det_val, log
 
-# ---------------------------
-# 역행렬 계산 (가우스 소거법)
-# ---------------------------
-def gauss_elimination_inverse(matrix):
+def get_minor(matrix, i, j):
+    return [row[:j] + row[j+1:] for idx, row in enumerate(matrix) if idx != i]
+
+def cofactor_matrix(matrix):
     n = len(matrix)
-    A = deepcopy(matrix)
-    I = [[float(i == j) for j in range(n)] for i in range(n)]
-    logs = []
-    logs.append("초기 상태 \n" + pretty_two_matrices(A, I))
-
+    cof = []
     for i in range(n):
-        if A[i][i] == 0:
-            for j in range(i+1, n):
-                if A[j][i] != 0:
-                    A[i], A[j] = A[j], A[i]
-                    I[i], I[j] = I[j], I[i]
-                    logs.append(f"\n행 {i} ↔ 행 {j} 교환 \n{pretty_two_matrices(A,I)}")
-                    break
-            else:
-                raise ValueError("역행렬 불가: 행렬식이 0입니다.")
-        pivot = A[i][i]
-        for k in range(n):
-            A[i][k] /= pivot
-            I[i][k] /= pivot
-        logs.append(f"\n행 {i}를 피벗 {pivot:.2f}로 나눔 \n{pretty_two_matrices(A,I)}")
+        row = []
+        for j in range(n):
+            minor = get_minor(matrix, i, j)
+            det_minor, _ = determinant_with_steps(minor) if len(minor) > 0 else (1, "")
+            row.append(((-1) ** (i + j)) * det_minor)
+        cof.append(row)
+    return cof
 
-        for j in range(i+1, n):
-            factor = A[j][i]
-            for k in range(n):
-                A[j][k] -= factor * A[i][k]
-                I[j][k] -= factor * I[i][k]
-            logs.append(f"\n행 {j}에서 {factor:.2f} × 행 {i} 빼기 \n{pretty_two_matrices(A,I)}")
+def adjoint_inverse(matrix):
+    n = len(matrix)
+    det, det_log = determinant_with_steps(matrix)
+    if abs(det) < 1e-9:
+        raise ValueError("역행렬 불가: det(A)=0 입니다.")
 
-    for i in range(n-1, -1, -1):
-        for j in range(i-1, -1, -1):
-            factor = A[j][i]
-            for k in range(n):
-                A[j][k] -= factor * A[i][k]
-                I[j][k] -= factor * I[i][k]
-            logs.append(f"\n행 {j}에서 {factor:.2f} × 행 {i} 빼기 (후진 대입) \n{pretty_two_matrices(A,I)}")
+    logs = []
+    logs.append("행렬식 det(A)\n, end=""")
+    logs.append(det_log)
+    cof = cofactor_matrix(matrix)
+    logs.append("\n여인자 행렬 (Cofactor Matrix)\n" + pretty_matrix(cof))
 
-    return I, "\n".join(logs)
+    adj = list(map(list, zip(*cof)))
+    logs.append("\n수반행렬 adj(A) = Cofactor^T\n" + pretty_matrix(adj))
+    inv = [[adj[i][j] / det for j in range(n)] for i in range(n)]
+    logs.append(f"\nA^(-1) = (1/det(A)) * adj(A), det(A) = {det:.2f}\n")
+    logs.append(pretty_matrix(inv))
 
-# ---------------------------
-# 역행렬 계산 (가우스-조던)
-# ---------------------------
+    return inv, "\n".join(logs)
+
 def gauss_jordan_inverse(matrix):
     n = len(matrix)
     A = deepcopy(matrix)
@@ -145,9 +131,7 @@ def gauss_jordan_inverse(matrix):
 
     return I, "\n".join(logs)
 
-# ---------------------------
-# 두 행렬 비교
-# ---------------------------
+
 def compare_matrices(m1, m2, tol=1e-9):
     n = len(m1)
     for i in range(n):
@@ -156,9 +140,7 @@ def compare_matrices(m1, m2, tol=1e-9):
                 return False
     return True
 
-# ---------------------------
-# Tkinter GUI
-# ---------------------------
+
 root = tk.Tk()
 root.title("행렬 계산기")
 root.configure(bg="#eef6f9")
@@ -186,6 +168,8 @@ btn_calc = ttk.Button(top_frame, text="Inverse", style="Pink.TButton")
 btn_calc.pack(side="left", padx=10)
 btn_det = ttk.Button(top_frame, text="Determinant", style="Pink.TButton")
 btn_det.pack(side="left", padx=10)
+btn_trans = ttk.Button(top_frame, text="Inputᵀ", style="Pink.TButton")
+btn_trans.pack(side="left", padx=10)
 
 matrix_frame = tk.Frame(root, bg="#eef6f9")
 matrix_frame.pack(pady=10)
@@ -204,9 +188,6 @@ def create_matrix_inputs():
     except ValueError:
         messagebox.showerror("오류", "정수를 입력하세요.")
         return
-    if n == 1:
-        messagebox.showwarning("안내", "1×1 행렬은 입력칸 생성이 필요 없습니다.")
-        return
     for i in range(n):
         row_entries = []
         for j in range(n):
@@ -215,12 +196,53 @@ def create_matrix_inputs():
             row_entries.append(e)
         matrix_entries.append(row_entries)
 
-def show_results(inv_gauss, log_gauss, inv_jordan, log_jordan):
+def get_matrix(entries):
+    n = len(entries)
+    matrix = []
+    for i in range(n):
+        row = []
+        for j in range(n):
+            val = entries[i][j].get().strip()
+            if val == "":
+                messagebox.showwarning("입력 오류", "모든 칸에 값을 입력하세요.")
+                return None
+            row.append(float(val))
+        matrix.append(row)
+    return matrix
+
+def show_single_result(title, mat):
     for widget in result_frame.winfo_children():
         widget.destroy()
-    titles = ["가우스 소거법 역행렬", "가우스-조던 역행렬"]
-    matrices = [inv_gauss, inv_jordan]
-    logs = [log_gauss, log_jordan]
+    frame = tk.Frame(result_frame, bg="white", bd=1, relief="solid")
+    frame.pack(padx=10, pady=10)
+    tk.Label(frame, text=title, font=("Apple SD Gothic Neo", 10, "bold"),
+             bg="white", fg="#333").pack(pady=5)
+    grid_frame = tk.Frame(frame, bg="white")
+    grid_frame.pack(padx=5, pady=5)
+    n = len(mat)
+    m = len(mat[0])
+    for i in range(n):
+        for j in range(m):
+            lbl = tk.Label(grid_frame, text=f"{mat[i][j]:.2f}",
+                           font=("Apple SD Gothic Neo", 12),
+                           width=8, borderwidth=1, relief="ridge",
+                           bg="#fdfdfd")
+            lbl.grid(row=i, column=j, padx=1, pady=1)
+
+
+def transpose_matrix():
+    A = get_matrix(matrix_entries)
+    if A:
+        res = list(map(list, zip(*A)))
+        show_single_result("Transposed Matrix", res)
+
+
+def show_results(inv_adj, log_adj, inv_jordan, log_jordan):
+    for widget in result_frame.winfo_children():
+        widget.destroy()
+    titles = ["Adjoint Method (Determinant-based)", "Gauss-Jordan Elimination"]
+    matrices = [inv_adj, inv_jordan]
+    logs = [log_adj, log_jordan]
 
     for idx, (title, mat, log) in enumerate(zip(titles, matrices, logs)):
         frame = tk.Frame(result_frame, bg="white", bd=1, relief="solid")
@@ -256,61 +278,38 @@ def calculate_inverse():
     try:
         n = len(matrix_entries)
         if n == 0:
-            messagebox.showwarning("입력 오류", "먼저 입력칸을 생성하세요.")
+            messagebox.showwarning("입력 오류", "먼저 Input A를 누르세요.")
             return
-        matrix = []
-        for i in range(n):
-            row = []
-            for j in range(n):
-                val = matrix_entries[i][j].get().strip()
-                if val == "":
-                    messagebox.showwarning("입력 오류", "모든 칸에 값을 입력하세요.")
-                    return
-                row.append(float(val))
-            matrix.append(row)
+        matrix = get_matrix(matrix_entries)
         det, _ = determinant_with_steps(matrix)
         if abs(det) < 1e-9:
             messagebox.showerror("역행렬 불가", "det(A) = 0 이므로 역행렬을 구할 수 없습니다.")
             return
-        inv_gauss, log_gauss = gauss_elimination_inverse(matrix)
+        inv_adj, log_adj = adjoint_inverse(matrix)
         inv_jordan, log_jordan = gauss_jordan_inverse(matrix)
-        show_results(inv_gauss, log_gauss, inv_jordan, log_jordan)
-        if compare_matrices(inv_gauss, inv_jordan):
+        show_results(inv_adj, log_adj, inv_jordan, log_jordan)
+        if compare_matrices(inv_adj, inv_jordan):
             messagebox.showinfo("비교 결과", "✅ 두 방법의 결과가 동일합니다.")
         else:
             messagebox.showwarning("비교 결과", "⚠️ 두 방법의 결과가 다릅니다.")
     except Exception as e:
         messagebox.showerror("오류", str(e))
 
-
 def calculate_determinant_only():
     try:
         n = len(matrix_entries)
         if n == 0:
-            messagebox.showwarning("입력 오류", "먼저 입력칸을 생성하세요.")
+            messagebox.showwarning("입력 오류", "먼저 Input A를 누르세요.")
             return
-        matrix = []
-        for i in range(n):
-            row = []
-            for j in range(n):
-                val = matrix_entries[i][j].get().strip()
-                if val == "":
-                    messagebox.showwarning("입력 오류", "모든 칸에 값을 입력하세요.")
-                    return
-                row.append(float(val))
-            matrix.append(row)
-
+        matrix = get_matrix(matrix_entries)
         det, log = determinant_with_steps(matrix)
         for widget in result_frame.winfo_children():
             widget.destroy()
-
         frame = tk.Frame(result_frame, bg="white", bd=1, relief="solid")
         frame.pack(padx=10, pady=10, fill="both", expand=True)
-
-        tk.Label(frame, text="행렬식",
-                 font=("Arial", 11, "bold"),
+        tk.Label(frame, text="Determinant Calculation Steps",
+                 font=("Apple SD Gothic Neo", 10, "bold"),
                  bg="white", fg="#333").pack(pady=5)
-
         log_box = tk.Text(frame, height=20, width=30,
                           wrap="word", font=("Courier New", 10),
                           bg="#F5FBFF", fg="black",
@@ -319,22 +318,19 @@ def calculate_determinant_only():
         log_box.pack(padx=10, pady=10, fill="both", expand=True)
         log_box.tag_config("explain", foreground="black")
         log_box.tag_config("matrix", foreground="#1565C0")
-
         for line in log.split("\n"):
             if any(bracket in line for bracket in ["⎡", "⎣", "⎢"]):
                 log_box.insert("end", line + "\n", "matrix")  
             else:
                 log_box.insert("end", line + "\n", "explain") 
-
         log_box.insert("end", f"\ndet(A) = {det:.2f}", "explain")
         log_box.config(state="disabled")
-
     except Exception as e:
         messagebox.showerror("오류", str(e))
-
 
 btn_create.config(command=create_matrix_inputs)
 btn_calc.config(command=calculate_inverse)
 btn_det.config(command=calculate_determinant_only)
+btn_trans.config(command=transpose_matrix)
 
 root.mainloop()
